@@ -13,7 +13,10 @@ from m3_edu_memory.embeddings import create_embedding_client
 from m3_edu_memory.memory_writer import rebuild_mastery_states
 from m3_edu_memory.operations import routing_batch_status
 from m3_edu_memory.retrieval import build_memory_index, memory_index_stats
-from m3_edu_memory.retrieval_evaluation import evaluate_retrieval
+from m3_edu_memory.retrieval_evaluation import (
+    evaluate_retrieval,
+    load_retrieval_queries,
+)
 from m3_edu_memory.routing import load_routing_policy
 from m3_edu_memory.verification import reverify_corrections
 from m3_edu_memory.vlm import PROMPT_VERSION
@@ -50,6 +53,82 @@ def process_exists(pid: int | None) -> bool:
         check=False,
     )
     return str(pid) in completed.stdout
+
+
+def build_acceptance(
+    *,
+    coverage: dict,
+    index: dict,
+    embedding_model: str,
+    retrieval: dict,
+    reports: dict,
+    expected_query_count: int,
+) -> dict:
+    total = int(coverage["total_attempts"])
+    embedding_counts = {
+        item["embedding_model"]: int(item["count"])
+        for item in index.get("embeddings", [])
+    }
+    expected_reports = set(QUERIES)
+    actual_reports = set(reports)
+    report_results_present = all(
+        int(item.get("matched", 0)) > 0 and int(item.get("returned", 0)) > 0
+        for item in reports.values()
+    )
+    galleries_present = all(
+        Path(str(item.get("gallery_html", ""))).is_file()
+        for item in reports.values()
+    )
+    checks = {
+        "full_memory_coverage": {
+            "expected": total,
+            "actual": int(coverage["materialized_attempts"]),
+            "passed": (
+                int(coverage["materialized_attempts"]) == total
+                and int(coverage["remaining_attempts"]) == 0
+            ),
+        },
+        "memory_documents": {
+            "expected": total,
+            "actual": int(index.get("documents", 0)),
+            "passed": int(index.get("documents", 0)) == total,
+        },
+        "vision_embeddings": {
+            "expected": total,
+            "actual": embedding_counts.get(embedding_model, 0),
+            "embedding_model": embedding_model,
+            "passed": embedding_counts.get(embedding_model, 0) == total,
+        },
+        "retrieval_queries": {
+            "expected": expected_query_count,
+            "actual": int(retrieval.get("query_count", 0)),
+            "evaluated": int(retrieval.get("evaluated_query_count", 0)),
+            "passed": (
+                int(retrieval.get("query_count", 0)) == expected_query_count
+                and int(retrieval.get("evaluated_query_count", 0))
+                == expected_query_count
+            ),
+        },
+        "subject_reports": {
+            "expected": sorted(expected_reports),
+            "actual": sorted(actual_reports),
+            "passed": actual_reports == expected_reports and report_results_present,
+        },
+        "report_galleries": {
+            "expected": len(expected_reports),
+            "actual": sum(
+                Path(str(item.get("gallery_html", ""))).is_file()
+                for item in reports.values()
+            ),
+            "passed": actual_reports == expected_reports and galleries_present,
+        },
+    }
+    passed = all(item["passed"] for item in checks.values())
+    return {
+        "status": "passed" if passed else "failed",
+        "passed": passed,
+        "checks": checks,
+    }
 
 
 def wait_for_routing(args, final_status: Path) -> dict:
@@ -191,9 +270,25 @@ def main() -> int:
                 "gallery_html": report["gallery_html"],
             }
 
+        write_json(status_path, {
+            "status": "running", "stage": "acceptance",
+            "updated_at": now(), "coverage": coverage,
+            "verification": verification, "index": index,
+            "retrieval_macro_metrics": retrieval["macro_metrics"],
+            "reports": reports,
+        })
+        acceptance = build_acceptance(
+            coverage=coverage,
+            index=index,
+            embedding_model=embedding_client.model,
+            retrieval=retrieval,
+            reports=reports,
+            expected_query_count=len(load_retrieval_queries(args.queries)),
+        )
+
         summary = {
-            "status": "completed",
-            "stage": "completed",
+            "status": "completed" if acceptance["passed"] else "failed",
+            "stage": "completed" if acceptance["passed"] else "acceptance-failed",
             "completed_at": now(),
             "coverage": coverage,
             "verification": verification,
@@ -201,10 +296,11 @@ def main() -> int:
             "index": index,
             "retrieval_macro_metrics": retrieval["macro_metrics"],
             "reports": reports,
+            "acceptance": acceptance,
         }
         write_json(root / "summary.json", summary)
         write_json(status_path, summary)
-        return 0
+        return 0 if acceptance["passed"] else 2
     except Exception as exc:
         write_json(status_path, {
             "status": "failed", "stage": "failed", "updated_at": now(),

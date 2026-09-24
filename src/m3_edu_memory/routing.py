@@ -435,6 +435,7 @@ def run_routed_diagnosis(
                 client=create_vision_client(
                     provider_config, profile_name=policy.initial_profile
                 ),
+                refresh_derived=refresh_derived,
             )
         except Exception as exc:
             initial_error = str(exc)
@@ -461,6 +462,7 @@ def run_routed_diagnosis(
                 client=create_vision_client(
                     provider_config, profile_name=policy.fallback_profile
                 ),
+                refresh_derived=refresh_derived,
             )
             fallback_run_id = fallback_result["run_id"]
         else:

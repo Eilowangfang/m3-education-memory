@@ -65,6 +65,7 @@ def rebuild_mastery_states(
         lambda: {
             "attempts": set(), "errors": [], "weighted_error": 0.0,
             "weight": 0.0, "verified": 0, "types": Counter(), "evidence": [],
+            "label": None,
         }
     )
     for row in rows:
@@ -75,8 +76,10 @@ def rebuild_mastery_states(
         )
         month_weight = int(row["Time"][5:7])
         for point in points:
-            key = (row["domain_code"], row["subdomain_code"], point)
+            key = (row["domain_code"], row["subdomain_code"], point.casefold())
             group = groups[key]
+            if group["label"] is None:
+                group["label"] = point
             group["attempts"].add(row["attempt_id"])
             group["weight"] += month_weight
             if row["has_error_pred"] == 1:
@@ -93,7 +96,8 @@ def rebuild_mastery_states(
         (model, prompt_version),
     )
     count = 0
-    for (domain, subdomain, point), group in groups.items():
+    for (domain, subdomain, _point_key), group in groups.items():
+        point = group["label"]
         attempt_count = len(group["attempts"])
         error_count = len(set(group["errors"]))
         error_rate = error_count / attempt_count if attempt_count else 0.0

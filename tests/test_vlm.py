@@ -108,7 +108,13 @@ class VlmTests(unittest.TestCase):
             db = Path(temp_dir) / "memory.db"
             connection = connect(db)
             initialize(connection)
-            for index, subdomain in enumerate(("lim", "der"), start=1):
+            cases = (
+                ("lim", "shared point"),
+                ("der", "shared point"),
+                ("int", "Custom Point"),
+                ("int", "custom point"),
+            )
+            for index, (subdomain, point) in enumerate(cases, start=1):
                 attempt_id = f"fermat-test-{index:06d}"
                 connection.execute(
                     "INSERT INTO attempts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -143,7 +149,7 @@ class VlmTests(unittest.TestCase):
                        VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         f"diagnosis-{index}", run_id, attempt_id, "q", "s", 1,
-                        "conceptual", "e", '["shared point"]', 0.8, 0,
+                        "conceptual", "e", json.dumps([point]), 0.8, 0,
                     ),
                 )
             rebuild_mastery_states(
@@ -155,8 +161,13 @@ class VlmTests(unittest.TestCase):
                     "SELECT mastery_id FROM mastery_states ORDER BY mastery_id"
                 )
             ]
-            self.assertEqual(len(ids), 2)
-            self.assertEqual(len(set(ids)), 2)
+            self.assertEqual(len(ids), 3)
+            self.assertEqual(len(set(ids)), 3)
+            merged = connection.execute(
+                """SELECT attempt_count FROM mastery_states
+                   WHERE subdomain_code='int'"""
+            ).fetchone()
+            self.assertEqual(merged[0], 2)
             connection.close()
 
     def test_exact_numeric_correction_verification(self):

@@ -25,6 +25,7 @@ def diagnose_attempt(
     *,
     attempt_id: str,
     client: VisionClient,
+    refresh_derived: bool = True,
 ) -> dict:
     connection = connect(db_path)
     initialize(connection)
@@ -235,12 +236,13 @@ def diagnose_attempt(
                     "INSERT INTO memory_edges(source_id,relation,target_id) VALUES(?,?,?)",
                     (f"attempt:{attempt_id}", "HAS_CORRECTION_VERSION", version_node_id),
                 )
-            rebuild_mastery_states(
-                connection,
-                model=client.model,
-                prompt_version=PROMPT_VERSION,
-                change_reason=f"diagnosis:{run_id}",
-            )
+            if refresh_derived:
+                rebuild_mastery_states(
+                    connection,
+                    model=client.model,
+                    prompt_version=PROMPT_VERSION,
+                    change_reason=f"diagnosis:{run_id}",
+                )
         result = {
             "run_id": run_id,
             "attempt_id": attempt_id,

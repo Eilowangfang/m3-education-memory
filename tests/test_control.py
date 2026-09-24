@@ -206,6 +206,37 @@ class ControlToolTests(unittest.TestCase):
         ).query("帮我整理代数错题")
         self.assertEqual(result["search_backend"], "sqlite_fts5+local_hash_vector")
 
+    def test_full_index_reuses_unchanged_embeddings(self):
+        class CountingEmbeddingClient:
+            model = "counting-embedding"
+            dimension = 2
+
+            def __init__(self):
+                self.calls = 0
+
+            def embed_document(self, text):
+                self.calls += 1
+                return [1.0, 0.0]
+
+        client = CountingEmbeddingClient()
+        first = build_memory_index(
+            self.db,
+            model="fixture-math-vlm",
+            embedding_client=client,
+            max_workers=2,
+        )
+        self.assertEqual(first["embedded_documents"], 1)
+        self.assertEqual(client.calls, 1)
+        second = build_memory_index(
+            self.db,
+            model="fixture-math-vlm",
+            embedding_client=client,
+            max_workers=2,
+        )
+        self.assertEqual(second["embedded_documents"], 0)
+        self.assertEqual(second["reused_embeddings"], 1)
+        self.assertEqual(client.calls, 1)
+
     def test_incremental_index_refresh(self):
         refreshed = index_memory_attempt(
             self.db, model="fixture-math-vlm", attempt_id=self.attempt_id

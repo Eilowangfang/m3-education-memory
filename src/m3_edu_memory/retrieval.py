@@ -4,6 +4,7 @@ import hashlib
 import math
 import re
 import struct
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -120,64 +121,199 @@ def build_memory_index(
     *,
     model: str,
     embedding_client: EmbeddingClient | None = None,
+    max_workers: int = 1,
 ) -> dict:
+    if max_workers < 1:
+        raise ValueError("max_workers must be at least 1")
     client = embedding_client or HashEmbeddingClient()
     memories = query_vlm_memories(db_path, model=model, limit=100_000)
     connection = connect(db_path)
     initialize(connection)
     fts_enabled = _initialize_fts(connection)
     now = datetime.now(timezone.utc).isoformat()
-    with connection:
-        if fts_enabled:
-            connection.execute("DELETE FROM memory_fts WHERE model=?", (model,))
-        connection.execute("DELETE FROM memory_documents WHERE model=?", (model,))
-        for item in memories["attempts"]:
-            _write_document(
-                connection, item=item, model=model, client=client,
-                fts_enabled=fts_enabled, now=now,
-            )
-    count = len(memories["attempts"])
+    documents = [_document_payload(item, model=model) for item in memories["attempts"]]
+    existing_rows = connection.execute(
+        "SELECT document_id,content_hash FROM memory_documents WHERE model=?",
+        (model,),
+    ).fetchall()
+    existing_hashes = {row["document_id"]: row["content_hash"] for row in existing_rows}
+    embedded_rows = connection.execute(
+        """SELECT e.document_id FROM memory_embeddings e
+           JOIN memory_documents d USING(document_id)
+           WHERE d.model=? AND e.embedding_model=? AND e.dimension=?""",
+        (model, client.model, client.dimension),
+    ).fetchall()
+    embedded_ids = {row["document_id"] for row in embedded_rows}
+    pending = [
+        document for document in documents
+        if not (
+            existing_hashes.get(document["document_id"]) == document["content_hash"]
+            and document["document_id"] in embedded_ids
+        )
+    ]
+    failures = []
+
+    def embed(document: dict) -> tuple[dict, list[float]]:
+        return document, _embed_document(client, document["content"])
+
+    embedded_count = 0
+    if max_workers == 1:
+        for document in pending:
+            try:
+                completed_document, vector = embed(document)
+                with connection:
+                    _store_document(
+                        connection,
+                        document=completed_document,
+                        vector=vector,
+                        client=client,
+                        fts_enabled=fts_enabled,
+                        now=now,
+                    )
+                embedded_count += 1
+            except Exception as exc:
+                failures.append({
+                    "attempt_id": document["item"]["attempt_id"],
+                    "error": str(exc),
+                })
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(embed, document): document for document in pending}
+            for future in as_completed(futures):
+                document = futures[future]
+                try:
+                    completed_document, vector = future.result()
+                    with connection:
+                        _store_document(
+                            connection,
+                            document=completed_document,
+                            vector=vector,
+                            client=client,
+                            fts_enabled=fts_enabled,
+                            now=now,
+                        )
+                    embedded_count += 1
+                except Exception as exc:
+                    failures.append({
+                        "attempt_id": document["item"]["attempt_id"],
+                        "error": str(exc),
+                    })
+    desired_ids = {document["document_id"] for document in documents}
+    if not failures:
+        stale_ids = set(existing_hashes) - desired_ids
+        with connection:
+            for document_id in stale_ids:
+                if fts_enabled:
+                    connection.execute(
+                        "DELETE FROM memory_fts WHERE document_id=?", (document_id,)
+                    )
+                connection.execute(
+                    "DELETE FROM memory_documents WHERE document_id=?", (document_id,)
+                )
+    count = len(documents)
     connection.close()
+    if failures:
+        preview = "; ".join(
+            f"{item['attempt_id']}: {item['error']}" for item in failures[:5]
+        )
+        raise RuntimeError(
+            f"Embedding failed for {len(failures)} of {len(pending)} documents; "
+            f"successful vectors were retained for resume. {preview}"
+        )
     return {
         "model": model,
         "indexed_documents": count,
+        "embedded_documents": embedded_count,
+        "reused_embeddings": count - len(pending),
         "embedding_model": client.model,
         "dimension": client.dimension,
         "fts_enabled": fts_enabled,
+        "max_workers": max_workers,
     }
 
 
-def _write_document(connection, *, item: dict, model: str, client, fts_enabled: bool, now: str) -> str:
+def _document_payload(item: dict, *, model: str) -> dict:
     content = _document_content(item)
-    content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    document_id = f"memory-document:{model}:{item['attempt_id']}"
+    return {
+        "item": item,
+        "content": content,
+        "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "document_id": f"memory-document:{model}:{item['attempt_id']}",
+        "model": model,
+    }
+
+
+def _store_document(
+    connection,
+    *,
+    document: dict,
+    vector: list[float],
+    client,
+    fts_enabled: bool,
+    now: str,
+) -> str:
+    item = document["item"]
+    document_id = document["document_id"]
+    previous = connection.execute(
+        "SELECT content_hash FROM memory_documents WHERE document_id=?",
+        (document_id,),
+    ).fetchone()
+    if previous is not None and previous["content_hash"] != document["content_hash"]:
+        connection.execute(
+            "DELETE FROM memory_embeddings WHERE document_id=?", (document_id,)
+        )
     if fts_enabled:
         connection.execute("DELETE FROM memory_fts WHERE document_id=?", (document_id,))
-    connection.execute("DELETE FROM memory_documents WHERE document_id=?", (document_id,))
     connection.execute(
         """INSERT INTO memory_documents(
              document_id,attempt_id,run_id,model,prompt_version,domain_code,
              subdomain_code,content,content_hash,updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?)""",
+           VALUES(?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(document_id) DO UPDATE SET
+             attempt_id=excluded.attempt_id,
+             run_id=excluded.run_id,
+             model=excluded.model,
+             prompt_version=excluded.prompt_version,
+             domain_code=excluded.domain_code,
+             subdomain_code=excluded.subdomain_code,
+             content=excluded.content,
+             content_hash=excluded.content_hash,
+             updated_at=excluded.updated_at""",
         (
-            document_id, item["attempt_id"], item["run_id"], model,
+            document_id, item["attempt_id"], item["run_id"], document["model"],
             item["prompt_version"], item["domain_code"], item["subdomain_code"],
-            content, content_hash, now,
+            document["content"], document["content_hash"], now,
         ),
     )
-    vector = _embed_document(client, content)
     connection.execute(
         """INSERT INTO memory_embeddings(
              document_id,embedding_model,dimension,vector_blob,created_at)
-           VALUES(?,?,?,?,?)""",
+           VALUES(?,?,?,?,?)
+           ON CONFLICT(document_id,embedding_model) DO UPDATE SET
+             dimension=excluded.dimension,
+             vector_blob=excluded.vector_blob,
+             created_at=excluded.created_at""",
         (document_id, client.model, len(vector), _pack(vector), now),
     )
     if fts_enabled:
         connection.execute(
             "INSERT INTO memory_fts(document_id,model,content) VALUES(?,?,?)",
-            (document_id, model, content),
+            (document_id, document["model"], document["content"]),
         )
     return document_id
+
+
+def _write_document(connection, *, item: dict, model: str, client, fts_enabled: bool, now: str) -> str:
+    document = _document_payload(item, model=model)
+    vector = _embed_document(client, document["content"])
+    return _store_document(
+        connection,
+        document=document,
+        vector=vector,
+        client=client,
+        fts_enabled=fts_enabled,
+        now=now,
+    )
 
 
 def index_memory_attempt(

@@ -236,6 +236,7 @@ def main() -> int:
             index = build_memory_index(
                 args.db, model=policy.model_alias,
                 embedding_client=embedding_client,
+                max_workers=8,
             )
 
         write_json(status_path, {

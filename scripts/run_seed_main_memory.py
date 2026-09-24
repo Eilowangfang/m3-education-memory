@@ -44,6 +44,28 @@ def counts(db_path: str, policy_name: str, policy_version: str) -> dict:
     return {"attempts": total, "routed": routed, "remaining": total - routed}
 
 
+def validate_media_runtime(db_path: str) -> None:
+    """Fail before a large batch when Parquet-backed images cannot be read."""
+    connection = sqlite3.connect(db_path)
+    parquet_source = connection.execute(
+        """SELECT 1 FROM attempts
+           WHERE image_source_path LIKE 'parquet://%'
+           LIMIT 1"""
+    ).fetchone()
+    connection.close()
+    if parquet_source is None:
+        return
+    try:
+        import pyarrow.parquet  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "pyarrow is required for Parquet-backed FERMAT images. "
+            "Set PYTHONPATH to "
+            "'vendor\\python;..\\dataset\\.python-libs;src' before starting "
+            "the Seed main-memory batch."
+        ) from exc
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="data/seed_memory.db")
@@ -61,6 +83,7 @@ def main() -> int:
     args = parser.parse_args()
     if not os.environ.get("ARK_API_KEY"):
         raise RuntimeError("ARK_API_KEY is not configured in this process")
+    validate_media_runtime(args.db)
 
     root = Path(args.output)
     root.mkdir(parents=True, exist_ok=True)

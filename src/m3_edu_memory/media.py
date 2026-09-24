@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+import threading
 from urllib.parse import unquote
 from urllib.parse import urlparse
+
+
+_PARQUET_CACHE_LOCK = threading.Lock()
+_PARQUET_CACHE_KEY: tuple[str, int] | None = None
+_PARQUET_CACHE_VALUES: list[dict | None] = []
 
 
 def _require_pyarrow():
@@ -33,7 +39,26 @@ def image_bytes_from_source(uri: str) -> bytes:
         return Path(path_text).read_bytes()
     pq = _require_pyarrow()
     path, row_index = parse_parquet_uri(uri)
-    value = pq.read_table(path, columns=["image"])["image"][row_index].as_py()
+    parquet = pq.ParquetFile(path)
+    row_offset = 0
+    row_group = None
+    for index in range(parquet.metadata.num_row_groups):
+        row_count = parquet.metadata.row_group(index).num_rows
+        if row_index < row_offset + row_count:
+            row_group = index
+            break
+        row_offset += row_count
+    if row_group is None:
+        raise IndexError(f"Parquet row {row_index} is out of range for {path}")
+
+    cache_key = (str(path.resolve()), row_group)
+    global _PARQUET_CACHE_KEY, _PARQUET_CACHE_VALUES
+    with _PARQUET_CACHE_LOCK:
+        if _PARQUET_CACHE_KEY != cache_key:
+            column = parquet.read_row_group(row_group, columns=["image"])["image"]
+            _PARQUET_CACHE_VALUES = column.to_pylist()
+            _PARQUET_CACHE_KEY = cache_key
+        value = _PARQUET_CACHE_VALUES[row_index - row_offset]
     data = (value or {}).get("bytes")
     if not data:
         raise ValueError(f"No image bytes at {uri}")

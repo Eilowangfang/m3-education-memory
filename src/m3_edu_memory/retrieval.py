@@ -13,6 +13,7 @@ from typing import Protocol
 from .database import connect, initialize
 from .query import query_vlm_memories
 from .knowledge import canonicalize_knowledge_points
+from .media import image_bytes_from_source, image_mime_type
 
 
 DOMAIN_LABELS = {
@@ -33,7 +34,18 @@ class EmbeddingClient(Protocol):
     def embed(self, text: str) -> list[float]: ...
 
 
-def _embed_document(client: EmbeddingClient, text: str) -> list[float]:
+def _embed_document(
+    client: EmbeddingClient,
+    text: str,
+    *,
+    image_bytes: bytes | None = None,
+    mime_type: str | None = None,
+) -> list[float]:
+    multimodal_method = getattr(client, "embed_multimodal", None)
+    if multimodal_method is not None and image_bytes is not None and mime_type:
+        return multimodal_method(
+            text, image_bytes=image_bytes, mime_type=mime_type
+        )
     method = getattr(client, "embed_document", None)
     return method(text) if method else client.embed(text)
 
@@ -131,7 +143,14 @@ def build_memory_index(
     initialize(connection)
     fts_enabled = _initialize_fts(connection)
     now = datetime.now(timezone.utc).isoformat()
-    documents = [_document_payload(item, model=model) for item in memories["attempts"]]
+    documents = [
+        _document_payload(item, model=model, embedding_client=client)
+        for item in memories["attempts"]
+    ]
+    # Adjacent reads then share one bounded Parquet row-group cache instead of
+    # rescanning a whole shard for every image.
+    if getattr(client, "embed_multimodal", None) is not None:
+        documents.sort(key=lambda item: item["item"]["image_source_path"])
     existing_rows = connection.execute(
         "SELECT document_id,content_hash FROM memory_documents WHERE model=?",
         (model,),
@@ -154,7 +173,17 @@ def build_memory_index(
     failures = []
 
     def embed(document: dict) -> tuple[dict, list[float]]:
-        return document, _embed_document(client, document["content"])
+        if getattr(client, "embed_multimodal", None) is None:
+            return document, _embed_document(client, document["content"])
+        source_bytes = image_bytes_from_source(
+            document["item"]["image_source_path"]
+        )
+        return document, _embed_document(
+            client,
+            document["content"],
+            image_bytes=source_bytes,
+            mime_type=image_mime_type(source_bytes),
+        )
 
     embedded_count = 0
     if max_workers == 1:
@@ -232,12 +261,21 @@ def build_memory_index(
     }
 
 
-def _document_payload(item: dict, *, model: str) -> dict:
+def _document_payload(
+    item: dict, *, model: str, embedding_client: EmbeddingClient | None = None
+) -> dict:
     content = _document_content(item)
+    source_fingerprint = str(item.get("image_source_path") or "")
+    embedding_fingerprint = str(
+        getattr(embedding_client, "index_fingerprint", "text-only-v1")
+    )
+    content_hash = hashlib.sha256(
+        f"{content}\0{source_fingerprint}\0{embedding_fingerprint}".encode("utf-8")
+    ).hexdigest()
     return {
         "item": item,
         "content": content,
-        "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "content_hash": content_hash,
         "document_id": f"memory-document:{model}:{item['attempt_id']}",
         "model": model,
     }
@@ -304,8 +342,20 @@ def _store_document(
 
 
 def _write_document(connection, *, item: dict, model: str, client, fts_enabled: bool, now: str) -> str:
-    document = _document_payload(item, model=model)
-    vector = _embed_document(client, document["content"])
+    document = _document_payload(
+        item, model=model, embedding_client=client
+    )
+    source_bytes = None
+    mime_type = None
+    if getattr(client, "embed_multimodal", None) is not None:
+        source_bytes = image_bytes_from_source(item["image_source_path"])
+        mime_type = image_mime_type(source_bytes)
+    vector = _embed_document(
+        client,
+        document["content"],
+        image_bytes=source_bytes,
+        mime_type=mime_type,
+    )
     return _store_document(
         connection,
         document=document,

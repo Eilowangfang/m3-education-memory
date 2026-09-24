@@ -8,8 +8,17 @@
       "dimension": 1024,
       "timeout": 120,
       "max_retries": 3,
-      "document_instructions": "Target_modality: text.\nInstruction:表示学生的数学作答记忆，用于根据题意、知识点、错误类型和订正内容检索相关历史错题\nQuery:",
-      "query_instructions": "Target_modality: text.\nInstruction:表示学生的数学学习查询，用于检索题意、知识点和错误原因相关的历史作答\nQuery:"
+      "input_mode": "text_image",
+      "document_instructions": "Target_modality: text and image.\nInstruction:联合表示学生手写数学作答图片及其诊断文本，用于检索相关题意、知识点、错误类型与订正内容\nQuery:",
+      "query_instructions": "Target_modality: text and image.\nInstruction:表示学生的数学学习查询，用于检索相关手写作答图片、题意、知识点与错误原因\nQuery:",
+      "image_preprocessing": {
+        "enabled": true,
+        "max_long_edge": 1600,
+        "max_pixels": 1600000,
+        "max_bytes": 1000000,
+        "jpeg_quality": 88,
+        "min_jpeg_quality": 72
+      }
     }
   }
 }

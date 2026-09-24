@@ -58,6 +58,28 @@ class EmbeddingTests(unittest.TestCase):
             self.assertEqual(client.dimension, 1024)
             self.assertEqual(client.api_key_env, "ARK_TEST_KEY")
 
+    def test_config_rejects_unknown_multimodal_input_mode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "embeddings.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "profiles": {
+                            "bad": {
+                                "endpoint": "https://example.test",
+                                "model": "model",
+                                "api_key_env": "KEY",
+                                "dimension": 1024,
+                                "input_mode": "video_only",
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "input_mode"):
+                load_embedding_profiles(path)
+
     def test_retrieval_uses_distinct_document_and_query_roles(self):
         class FakeClient:
             model = "fake"
@@ -80,6 +102,31 @@ class EmbeddingTests(unittest.TestCase):
         self.assertEqual(
             client.calls,
             [("document", "memory"), ("query", "question")],
+        )
+
+    def test_retrieval_prefers_joint_image_text_document_embedding(self):
+        class FakeMultimodalClient:
+            model = "fake-multimodal"
+            dimension = 2
+
+            def __init__(self):
+                self.calls = []
+
+            def embed_multimodal(self, text, *, image_bytes, mime_type):
+                self.calls.append((text, image_bytes, mime_type))
+                return [0.6, 0.8]
+
+        client = FakeMultimodalClient()
+        vector = _embed_document(
+            client,
+            "diagnosis",
+            image_bytes=b"image",
+            mime_type="image/png",
+        )
+        self.assertEqual(vector, [0.6, 0.8])
+        self.assertEqual(
+            client.calls,
+            [("diagnosis", b"image", "image/png")],
         )
 
     def test_retrieval_metrics_are_computed_at_k(self):

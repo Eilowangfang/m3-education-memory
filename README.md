@@ -264,7 +264,7 @@ worker 可使用 `--worker-id`、`--lease-seconds` 和 `--retry-base-seconds` �
 ```powershell
 python scripts\run_seed_main_memory.py `
   --db "data\seed_memory.db" `
-  --max-workers 6 `
+  --max-workers 8 `
   --max-passes 3
 ```
 
@@ -293,7 +293,7 @@ python -m m3_edu_memory.cli batch-status `
 python scripts\finalize_seed_main_memory.py
 ```
 
-进度写入 `outputs\seed-main-memory\finalization\status.json`，最终结果写入同目录下的 `summary.json` 和 `retrieval-evaluation.json`。索引数量与已完成记忆数一致时不会重复计算文档向量。全量向量构建使用 8 路并发，已成功写入且内容未变化的向量会在重启后直接复用；单条失败不会清空现有索引。`summary.json` 的 `acceptance` 会逐项检查全量记忆覆盖、文档索引、视觉向量、14 条固定检索查询、五学科报告及其 HTML 展示页；任一关键产物缺失时收尾器以失败状态退出，避免把部分结果误报为完整 Demo。
+进度写入 `outputs\seed-main-memory\finalization\status.json`，最终结果写入同目录下的 `summary.json` 和 `retrieval-evaluation.json`。索引数量与已完成记忆数一致时不会重复计算文档向量。全量向量构建使用 8 路并发，已成功写入且内容未变化的向量会在重启后直接复用；单条失败不会清空现有索引。Doubao-embedding-vision 的文档向量同时输入原始手写作答图片与 VLM 诊断文本，文本查询使用同一向量空间完成跨模态检索；图片在发送前压缩到最长边 1600 像素、最多约 1 MB，原始证据图片保持不变。Parquet 图片按 row group 读取并使用有界缓存，避免为每道题重复扫描完整分片。`summary.json` 的 `acceptance` 会逐项检查全量记忆覆盖、文档索引、视觉向量、14 条固定检索查询、五学科报告及其 HTML 展示页；任一关键产物缺失时收尾器以失败状态退出，避免把部分结果误报为完整 Demo。
 
 批处理内置了账户级错误熔断。一旦检测到 HTTP 401/403、`AccountOverdueError`、额度不足或密钥/权限错误，它只等待当前最多 `max-workers` 个请求结束，然后停止领取新题并将状态标记为失败。余额或权限恢复后重新执行 `run_seed_main_memory.py`，会自动跳过已物化记忆并从剩余记录续跑。
 

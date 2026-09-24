@@ -90,23 +90,15 @@ def parse_json_object(content: str) -> dict:
         text = re.sub(r"\s*```$", "", text)
 
     def loads(candidate: str):
-        latex_commands = (
-            "frac|sqrt|cdot|times|theta|alpha|beta|gamma|delta|lambda|mu|pi|"
-            "sigma|phi|sin|cos|tan|log|ln|lim|int|sum|prod|left|right|text|"
-            "mathrm|mathbf|begin|end|overline|vec|partial|infty|le|ge|neq|approx"
-        )
-        candidate = re.sub(
-            rf'\\(?=(?:{latex_commands})(?:\b|\{{))', r'\\\\', candidate
-        )
+        # Preserve structural JSON escapes (quote, slash, backslash, unicode).
+        # Treat all other backslashes as literal text. This handles arbitrary
+        # LaTeX commands, including commands that begin with JSON control-escape
+        # letters such as \frac, \theta and \begin.
+        candidate = re.sub(r'\\(?!["\\/u])', r'\\\\', candidate)
         try:
-            return json.loads(candidate)
+            return json.loads(candidate, strict=False)
         except json.JSONDecodeError:
-            # Math models sometimes emit LaTeX commands with one JSON
-            # backslash. Preserve valid JSON escapes and quote the rest before
-            # one conservative retry. Literal line breaks in prose are also
-            # accepted so an otherwise useful diagnosis is not discarded.
-            repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', candidate)
-            return json.loads(repaired, strict=False)
+            raise
 
     try:
         value = loads(text)

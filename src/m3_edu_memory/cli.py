@@ -634,7 +634,14 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(payload, ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
-                temporary.replace(progress_output)
+                for attempt in range(5):
+                    try:
+                        temporary.replace(progress_output)
+                        break
+                    except PermissionError:
+                        if attempt == 4:
+                            raise
+                        time.sleep(0.1 * (attempt + 1))
 
         if args.max_workers == 1:
             for attempt_id in attempt_ids:

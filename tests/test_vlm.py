@@ -248,10 +248,13 @@ class VlmTests(unittest.TestCase):
 
     def test_repairs_unescaped_latex_backslashes(self):
         parsed = parse_json_object(
-            r'{"latex":"\frac{x}{y}","note":"\theta+\operatorname{sin}(x)"}'
+            '{"latex":"\\frac{x}{y}",'
+            '"note":"\\theta+\\operatorname{sin}(x)",'
+            '"mixed":"\\\\\\beta"}'
         )
         self.assertEqual(parsed["latex"], r"\frac{x}{y}")
         self.assertEqual(parsed["note"], r"\theta+\operatorname{sin}(x)")
+        self.assertEqual(parsed["mixed"], r"\\beta")
 
     def test_partial_correction_is_retained_for_review(self):
         partial = json.loads(json.dumps(FIXTURE))

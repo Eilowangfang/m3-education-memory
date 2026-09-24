@@ -91,10 +91,22 @@ def parse_json_object(content: str) -> dict:
 
     def loads(candidate: str):
         # Preserve structural JSON escapes (quote, slash, backslash, unicode).
-        # Treat all other backslashes as literal text. This handles arbitrary
-        # LaTeX commands, including commands that begin with JSON control-escape
-        # letters such as \frac, \theta and \begin.
-        candidate = re.sub(r'\\(?!["\\/u])', r'\\\\', candidate)
+        # Treat every other odd-length backslash run as literal text. Working
+        # with a complete run also repairs mixed forms such as three slashes
+        # before a LaTeX command, which a single-character regex cannot handle.
+        def repair_backslashes(match: re.Match) -> str:
+            slashes = match.group(0)
+            if len(slashes) % 2 == 0:
+                return slashes
+            next_index = match.end()
+            following = candidate[next_index:next_index + 5]
+            structural = (
+                following.startswith(('"', '/'))
+                or bool(re.match(r"u[0-9a-fA-F]{4}", following))
+            )
+            return slashes if structural else slashes + "\\"
+
+        candidate = re.sub(r"\\+", repair_backslashes, candidate)
         try:
             return json.loads(candidate, strict=False)
         except json.JSONDecodeError:

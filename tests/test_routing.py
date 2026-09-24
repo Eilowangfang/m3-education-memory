@@ -170,6 +170,19 @@ class RoutingTests(unittest.TestCase):
                 policy=policy,
             )
             self.assertEqual(materialized["model_alias"], "seed-education-router-v1")
+            replayed = record_routing_decision(
+                db_path,
+                attempt_id="route-1",
+                policy=policy,
+                decision=first,
+                selected_run_id="pro-1",
+                fallback_run_id="pro-1",
+            )
+            materialize_routing_view(
+                db_path,
+                routing_decision_id=replayed["routing_decision_id"],
+                policy=policy,
+            )
             routed = query_vlm_memories(
                 db_path, model="seed-education-router-v1", limit=10
             )
@@ -178,6 +191,13 @@ class RoutingTests(unittest.TestCase):
             connection = connect(db_path)
             self.assertEqual(
                 connection.execute("SELECT COUNT(*) FROM routing_decisions").fetchone()[0],
+                2,
+            )
+            self.assertEqual(
+                connection.execute(
+                    """SELECT COUNT(*) FROM episodic_memories
+                       WHERE attempt_id='route-1' AND source='routing:router:v1'"""
+                ).fetchone()[0],
                 1,
             )
             connection.close()

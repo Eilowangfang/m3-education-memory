@@ -320,7 +320,17 @@ def materialize_routing_view(
                     source_correction["rendered_path"], created_at,
                 ),
             )
-        memory_id = f"episode:{source['attempt_id']}:{route_run_id}"
+        episode_source = f"routing:{policy.policy_name}:{policy.policy_version}"
+        existing_episode = connection.execute(
+            """SELECT memory_id FROM episodic_memories
+               WHERE attempt_id=? AND source=?""",
+            (source["attempt_id"], episode_source),
+        ).fetchone()
+        memory_id = (
+            existing_episode["memory_id"]
+            if existing_episode is not None
+            else f"episode:{source['attempt_id']}:{route_run_id}"
+        )
         content = (
             f"Routed diagnosis selected {source['model']} for attempt "
             f"{source['attempt_id']}: has_error={source['has_error_pred']}, "
@@ -329,17 +339,26 @@ def materialize_routing_view(
         connection.execute(
             """INSERT INTO episodic_memories(
                  memory_id,attempt_id,content,error_type,status,source,created_at)
-               VALUES(?,?,?,?,?,?,?)""",
+               VALUES(?,?,?,?,?,?,?)
+               ON CONFLICT(attempt_id,source) DO UPDATE SET
+                 content=excluded.content,
+                 error_type=excluded.error_type,
+                 status=excluded.status,
+                 created_at=excluded.created_at""",
             (
                 memory_id, source["attempt_id"], content,
                 source["error_type_pred"],
                 "hypothesis_requires_review" if source["requires_review"] else "hypothesis",
-                f"routing:{policy.policy_name}:{policy.policy_version}", created_at,
+                episode_source, created_at,
             ),
         )
         connection.execute(
             """INSERT INTO memory_nodes(node_id,node_type,label,properties_json)
-               VALUES(?,?,?,?)""",
+               VALUES(?,?,?,?)
+               ON CONFLICT(node_id) DO UPDATE SET
+                 node_type=excluded.node_type,
+                 label=excluded.label,
+                 properties_json=excluded.properties_json""",
             (
                 memory_id, "ErrorEpisode", source["error_type_pred"],
                 json.dumps(
@@ -353,7 +372,8 @@ def materialize_routing_view(
             ),
         )
         connection.execute(
-            "INSERT INTO memory_edges(source_id,relation,target_id) VALUES(?,?,?)",
+            """INSERT OR IGNORE INTO memory_edges(
+                 source_id,relation,target_id) VALUES(?,?,?)""",
             (f"attempt:{source['attempt_id']}", "HAS_ROUTED_DIAGNOSIS", memory_id),
         )
         connection.execute(

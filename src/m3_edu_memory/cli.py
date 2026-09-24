@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
+import time
 
 from .diagnosis import (
     diagnose_attempt,
@@ -218,6 +220,10 @@ def build_parser() -> argparse.ArgumentParser:
     routed_parser.add_argument("--max-workers", type=int, default=1)
     routed_parser.add_argument("--only-unprocessed", action="store_true")
     routed_parser.add_argument("--result-output")
+    routed_parser.add_argument(
+        "--progress-output",
+        help="Atomically updated JSON summary for monitoring a long routing batch.",
+    )
     routed_parser.add_argument(
         "--existing-only",
         action="store_true",
@@ -586,16 +592,59 @@ def main(argv: list[str] | None = None) -> int:
                 return attempt_id, None, exc
 
         fatal_error = None
+        outcomes = []
+        started = time.monotonic()
+        progress_output = Path(args.progress_output) if args.progress_output else None
+
+        def emit_progress(attempt_id: str | None, outcome, *, state: str = "running"):
+            completed_count = sum(item[2] is None for item in outcomes)
+            failed_count = len(outcomes) - completed_count
+            elapsed_seconds = max(0.001, time.monotonic() - started)
+            error = outcome[2] if outcome is not None else None
+            payload = {
+                "event": "routing_progress",
+                "state": state,
+                "processed_count": len(outcomes),
+                "selected_count": len(attempt_ids),
+                "completed_count": completed_count,
+                "failed_count": failed_count,
+                "unattempted_count": len(attempt_ids) - len(outcomes),
+                "last_attempt_id": attempt_id,
+                "last_outcome": (
+                    "none" if outcome is None
+                    else ("failed" if error is not None else "completed")
+                ),
+                "last_error": str(error)[:2000] if error is not None else None,
+                "fatal_provider_error": bool(
+                    error is not None and is_fatal_provider_error(error)
+                ),
+                "elapsed_seconds": round(elapsed_seconds, 3),
+                "throughput_per_hour": round(
+                    len(outcomes) * 3600.0 / elapsed_seconds, 2
+                ),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            print(json.dumps(payload, ensure_ascii=False), flush=True)
+            if progress_output is not None:
+                progress_output.parent.mkdir(parents=True, exist_ok=True)
+                temporary = progress_output.with_suffix(
+                    progress_output.suffix + ".tmp"
+                )
+                temporary.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                temporary.replace(progress_output)
+
         if args.max_workers == 1:
-            outcomes = []
             for attempt_id in attempt_ids:
                 outcome = route(attempt_id)
                 outcomes.append(outcome)
+                emit_progress(attempt_id, outcome)
                 if outcome[2] is not None and is_fatal_provider_error(outcome[2]):
                     fatal_error = str(outcome[2])
                     break
         else:
-            outcomes = []
             with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
                 pending_ids = iter(attempt_ids)
                 futures = {}
@@ -609,11 +658,7 @@ def main(argv: list[str] | None = None) -> int:
                         attempt_id = futures.pop(future)
                         outcome = future.result()
                         outcomes.append(outcome)
-                        print(json.dumps({
-                            "progress": len(outcomes),
-                            "total": len(attempt_ids),
-                            "attempt_id": attempt_id,
-                        }), flush=True)
+                        emit_progress(attempt_id, outcome)
                         if (
                             outcome[2] is not None
                             and is_fatal_provider_error(outcome[2])
@@ -627,6 +672,11 @@ def main(argv: list[str] | None = None) -> int:
                         for future in futures:
                             future.cancel()
                         break
+        emit_progress(
+            outcomes[-1][0] if outcomes else None,
+            outcomes[-1] if outcomes else None,
+            state="aborted" if fatal_error else "completed",
+        )
         completed = [result for _, result, exc in outcomes if exc is None]
         failed = [
             {"attempt_id": attempt_id, "error": str(exc)}

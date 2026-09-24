@@ -31,6 +31,14 @@ def write_status(path: Path, payload: dict) -> None:
     temporary.replace(path)
 
 
+def read_progress(path: Path) -> dict | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def counts(db_path: str, policy_name: str, policy_version: str) -> dict:
     connection = sqlite3.connect(db_path)
     total = connection.execute("SELECT COUNT(*) FROM attempts").fetchone()[0]
@@ -119,6 +127,8 @@ def main() -> int:
                 status["stage"] = f"routing-pass-{pass_number}"
                 status["updated_at"] = now()
                 write_status(status_path, status)
+                progress_path = root / f"routing-pass-{pass_number}.progress.json"
+                progress_path.unlink(missing_ok=True)
                 command = base + [
                     "diagnose-routed",
                     "--db", args.db,
@@ -129,6 +139,7 @@ def main() -> int:
                     "--max-workers", str(args.max_workers),
                     "--defer-derived-refresh",
                     "--result-output", str(root / f"routing-pass-{pass_number}.json"),
+                    "--progress-output", str(progress_path),
                 ]
                 log.write("\n$ " + subprocess.list2cmdline(command) + "\n")
                 log.flush()
@@ -142,6 +153,9 @@ def main() -> int:
                     status.update(current)
                     status["active_pass"] = pass_number
                     status["child_pid"] = process.pid
+                    pass_progress = read_progress(progress_path)
+                    if pass_progress is not None:
+                        status["pass_progress"] = pass_progress
                     status["updated_at"] = now()
                     write_status(status_path, status)
                     time.sleep(15)

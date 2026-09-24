@@ -278,7 +278,14 @@ python -m m3_edu_memory.cli batch-status `
   --output "outputs\seed-main-memory\live-status.json"
 ```
 
+运行中的总状态写入 `outputs\seed-main-memory\status.json`。每个路由 pass
+还会原子更新 `routing-pass-N.progress.json`，记录已处理、成功、失败、未处理、
+最近错误、账户级错误标记和实时吞吐；`status.json` 的 `pass_progress` 字段同步
+包含这份摘要，便于 UI 或监控脚本直接读取。
+
 只有 `materialized_run_id` 已写入的作答才算完成。已有路由决策但尚未物化的作答仍会被后续批次重新领取，避免一次写入中断后永久漏处理。
+同一错题和同一路由策略可以安全重复物化：系统更新既有情景记忆与图节点，
+同时保留新的路由决策审计记录。
 
 全量路由运行期间可以启动独立收尾进程。它会等待覆盖率达到 100%，随后离线重验证历史订正、重建规范化掌握状态、检查语义索引完整性、运行 14 条检索评测，并生成微积分、代数、几何、三角学和概率统计抽样报告：
 

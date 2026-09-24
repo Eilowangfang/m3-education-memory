@@ -204,10 +204,14 @@ def main() -> int:
             embedding_client = create_embedding_client(
                 args.embedding_config, profile_name=args.embedding_profile
             )
+            status["stage"] = "build-memory-index"
+            status["updated_at"] = now()
+            write_status(status_path, status)
             index_result = build_memory_index(
                 args.db,
                 model=policy.model_alias,
                 embedding_client=embedding_client,
+                max_workers=args.max_workers,
             )
             status["index"] = index_result
             status["status"] = (

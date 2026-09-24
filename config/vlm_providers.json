@@ -7,9 +7,15 @@
       "model": "doubao-seed-2-1-pro-260915",
       "api_key_env": "ARK_API_KEY",
       "timeout": 240,
-      "max_retries": 3,
+      "max_retries": 2,
       "use_json_mode": true,
       "image_detail": "xhigh",
+      "request_options": {
+        "thinking": {
+          "type": "disabled"
+        },
+        "max_tokens": 4096
+      },
       "image_preprocessing": {
         "enabled": true,
         "max_long_edge": 4096,

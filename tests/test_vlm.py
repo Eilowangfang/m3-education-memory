@@ -256,6 +256,13 @@ class VlmTests(unittest.TestCase):
         self.assertEqual(parsed["note"], r"\theta+\operatorname{sin}(x)")
         self.assertEqual(parsed["mixed"], r"\\beta")
 
+    def test_uses_first_complete_json_object_when_provider_appends_text(self):
+        parsed = parse_json_object(
+            '{"latex":"\\frac{x}{y}"} trailing commentary '
+            '{"ignored":true}'
+        )
+        self.assertEqual(parsed, {"latex": r"\frac{x}{y}"})
+
     def test_partial_correction_is_retained_for_review(self):
         partial = json.loads(json.dumps(FIXTURE))
         partial["requires_review"] = False

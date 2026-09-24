@@ -270,7 +270,8 @@ def diagnose_attempt(
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     run_id, attempt_id, client.provider, client.model,
-                    PROMPT_VERSION, "failed", None, None, str(exc),
+                    PROMPT_VERSION, "failed", getattr(exc, "raw_response", None),
+                    None, str(exc),
                     len(inference_bytes) if inference_bytes else None,
                     preprocessing.get("output_width"), preprocessing.get("output_height"),
                     image_mime_type(inference_bytes) if inference_bytes else None,

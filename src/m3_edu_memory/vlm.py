@@ -24,6 +24,15 @@ class VLMRequestError(RuntimeError):
         super().__init__(message)
         self.request_attempts = request_attempts
 
+
+class VLMResponseError(ValueError):
+    """Preserve an invalid provider response for later diagnosis and replay."""
+
+    def __init__(self, message: str, *, raw_response: str):
+        super().__init__(message)
+        self.raw_response = raw_response
+
+
 SYSTEM_PROMPT = """You analyze a single image of a handwritten mathematics problem and solution.
 Return only one JSON object matching the requested schema. Transcribe what is visibly written before judging it.
 Do not invent hidden student intentions. Identify the first step that makes the reasoning invalid, if any.
@@ -107,19 +116,18 @@ def parse_json_object(content: str) -> dict:
             return slashes if structural else slashes + "\\"
 
         candidate = re.sub(r"\\+", repair_backslashes, candidate)
-        try:
-            return json.loads(candidate, strict=False)
-        except json.JSONDecodeError:
-            raise
+        # raw_decode accepts the first complete JSON value and intentionally
+        # ignores provider commentary or a duplicated object that follows it.
+        candidate = candidate.lstrip()
+        return json.JSONDecoder(strict=False).raw_decode(candidate)[0]
 
     try:
         value = loads(text)
     except json.JSONDecodeError:
         start = text.find("{")
-        end = text.rfind("}")
-        if start < 0 or end <= start:
+        if start < 0:
             raise ValueError("VLM response did not contain a JSON object")
-        value = loads(text[start:end + 1])
+        value = loads(text[start:])
     if not isinstance(value, dict):
         raise ValueError("VLM response JSON must be an object")
     return value
@@ -334,7 +342,13 @@ class OpenAICompatibleVisionClient:
                 item.get("text", "") for item in content if isinstance(item, dict)
             )
         response_metadata["usage"] = body.get("usage") or {}
-        return content, validate_diagnosis(parse_json_object(content)), response_metadata
+        try:
+            parsed = validate_diagnosis(parse_json_object(content))
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise VLMResponseError(
+                str(exc), raw_response=content
+            ) from exc
+        return content, parsed, response_metadata
 
 
 @dataclass

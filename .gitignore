@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime data and generated artifacts
+data/
+outputs/
+*.log
+*.pid
+
+# Local vendored runtimes and upstream checkouts
+vendor/
+
+# Codex runtime state
+.codex/
+.codex-finalizer/

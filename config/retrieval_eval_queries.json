@@ -1,0 +1,19 @@
+{
+  "description": "Natural-language domain retrieval checks with structured domain labels as weak relevance ground truth.",
+  "queries": [
+    {"query_id": "calculus-zh", "query": "查找导数、积分或极限中计算步骤出错的历史错题", "relevant_domain": "clc"},
+    {"query_id": "calculus-en", "query": "calculus mistakes involving derivatives integrals and limits", "relevant_domain": "clc"},
+    {"query_id": "algebra-zh", "query": "整理方程、多项式和代数变形相关的错误", "relevant_domain": "alg"},
+    {"query_id": "algebra-en", "query": "algebra errors in equations polynomials and symbolic manipulation", "relevant_domain": "alg"},
+    {"query_id": "arithmetic-zh", "query": "分数、小数、四则运算和数列计算错题", "relevant_domain": "art"},
+    {"query_id": "arithmetic-en", "query": "arithmetic mistakes with fractions decimals and numerical calculation", "relevant_domain": "art"},
+    {"query_id": "geometry-zh", "query": "几何图形、角度、面积和空间关系的错题", "relevant_domain": "mgm"},
+    {"query_id": "geometry-en", "query": "geometry mistakes about shapes angles area and spatial relations", "relevant_domain": "mgm"},
+    {"query_id": "probability-zh", "query": "概率、统计、计数和数据分析相关错误", "relevant_domain": "pst"},
+    {"query_id": "probability-en", "query": "probability statistics counting and data analysis mistakes", "relevant_domain": "pst"},
+    {"query_id": "trigonometry-zh", "query": "三角函数、三角恒等式和角度计算错误", "relevant_domain": "trg"},
+    {"query_id": "trigonometry-en", "query": "trigonometry errors involving identities functions and angles", "relevant_domain": "trg"},
+    {"query_id": "aptitude-zh", "query": "应用题、逻辑推理和综合数学能力相关错题", "relevant_domain": "apt"},
+    {"query_id": "aptitude-en", "query": "word problems logical reasoning and general mathematical aptitude mistakes", "relevant_domain": "apt"}
+  ]
+}

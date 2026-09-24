@@ -1,0 +1,20 @@
+{
+  "policy_name": "seed-education-router",
+  "policy_version": "v1-eval100-20260923",
+  "initial_profile": "volcengine-seed-2.1-turbo",
+  "fallback_profile": "volcengine-seed-2.1-pro",
+  "model_alias": "seed-education-router-v1",
+  "confidence_threshold": 0.9,
+  "escalate_on_requires_review": true,
+  "escalate_on_uncertain": true,
+  "calibration": {
+    "evaluation_suite": "fermat-vlm-pilot-100",
+    "sample_count": 100,
+    "coverage": 1.0,
+    "has_error_accuracy": 0.77,
+    "error_precision": 0.7213114754098361,
+    "error_recall": 0.88,
+    "error_f1": 0.7927927927927928,
+    "pro_use_rate": 0.6
+  }
+}

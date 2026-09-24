@@ -1,0 +1,42 @@
+{
+  "question_transcription": "Evaluate the two limits shown in the image.",
+  "solution_transcription": "The handwritten work transforms both limits and obtains 2/3 and 2.",
+  "steps": [
+    {
+      "step_index": 0,
+      "transcription": "Transforms the first quotient by dividing numerator and denominator by x-1.",
+      "normalized_latex": "\\lim_{x\\to1}\\frac{(x^{15}-1)/(x-1)}{(x^{10}-1)/(x-1)}",
+      "bbox": [0.1, 0.25, 0.9, 0.56],
+      "is_error": false,
+      "confidence": 0.9
+    },
+    {
+      "step_index": 1,
+      "transcription": "Evaluates the ratio as 10/15 = 2/3.",
+      "normalized_latex": "\\frac{10}{15}=\\frac{2}{3}",
+      "bbox": [0.4, 0.48, 0.7, 0.62],
+      "is_error": true,
+      "confidence": 0.88
+    }
+  ],
+  "knowledge_points": ["limits", "standard limits", "algebraic manipulation"],
+  "has_error": true,
+  "error_type": "algebraic_manipulation",
+  "first_error_step": 1,
+  "error_explanation": "The derivative-equivalent ratio should be 15/10, not 10/15.",
+  "correction": {
+    "corrected_solution": "15/10 = 3/2",
+    "corrected_steps": [
+      {
+        "step_index": 0,
+        "latex": "\\frac{15}{10}=\\frac{3}{2}",
+        "explanation": "The numerator contributes 15 and the denominator contributes 10."
+      }
+    ],
+    "final_answer": "3/2",
+    "verification_expression": "15/10 = 3/2",
+    "confidence": 0.9
+  },
+  "confidence": 0.88,
+  "requires_review": false
+}

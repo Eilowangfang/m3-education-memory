@@ -246,6 +246,29 @@ class VlmTests(unittest.TestCase):
         parsed = parse_json_object("```json\n" + json.dumps(FIXTURE) + "\n```")
         self.assertEqual(validate_diagnosis(parsed)["error_type"], "conceptual")
 
+    def test_repairs_unescaped_latex_backslashes(self):
+        parsed = parse_json_object(r'{"latex":"\frac{x}{y}","note":"\theta"}')
+        self.assertEqual(parsed["latex"], r"\frac{x}{y}")
+        self.assertEqual(parsed["note"], r"\theta")
+
+    def test_partial_correction_is_retained_for_review(self):
+        partial = json.loads(json.dumps(FIXTURE))
+        partial["requires_review"] = False
+        partial["correction"] = {
+            "corrected_steps": [{
+                "step_index": 0,
+                "latex": "1/3+1/6=1/2",
+                "explanation": "通分。",
+            }],
+            "confidence": 0.7,
+        }
+        validated = validate_diagnosis(partial)
+        self.assertTrue(validated["requires_review"])
+        self.assertIsNone(validated["correction"]["final_answer"])
+        self.assertIn(
+            "1/3+1/6=1/2", validated["correction"]["corrected_solution"]
+        )
+
     def test_invalid_bbox_and_null_explanation_require_review_without_dropping_run(self):
         payload = json.loads(json.dumps(FIXTURE))
         payload["steps"][0]["bbox"] = [25, 50, 600, 900]

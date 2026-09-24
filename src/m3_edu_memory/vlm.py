@@ -88,14 +88,34 @@ def parse_json_object(content: str) -> dict:
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"\s*```$", "", text)
+
+    def loads(candidate: str):
+        latex_commands = (
+            "frac|sqrt|cdot|times|theta|alpha|beta|gamma|delta|lambda|mu|pi|"
+            "sigma|phi|sin|cos|tan|log|ln|lim|int|sum|prod|left|right|text|"
+            "mathrm|mathbf|begin|end|overline|vec|partial|infty|le|ge|neq|approx"
+        )
+        candidate = re.sub(
+            rf'\\(?=(?:{latex_commands})(?:\b|\{{))', r'\\\\', candidate
+        )
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            # Math models sometimes emit LaTeX commands with one JSON
+            # backslash. Preserve valid JSON escapes and quote the rest before
+            # one conservative retry. Literal line breaks in prose are also
+            # accepted so an otherwise useful diagnosis is not discarded.
+            repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', candidate)
+            return json.loads(repaired, strict=False)
+
     try:
-        value = json.loads(text)
+        value = loads(text)
     except json.JSONDecodeError:
         start = text.find("{")
         end = text.rfind("}")
         if start < 0 or end <= start:
             raise ValueError("VLM response did not contain a JSON object")
-        value = json.loads(text[start:end + 1])
+        value = loads(text[start:end + 1])
     if not isinstance(value, dict):
         raise ValueError("VLM response JSON must be an object")
     return value
@@ -129,17 +149,29 @@ def validate_diagnosis(value: dict) -> dict:
         raise ValueError("knowledge_points must be an array")
     correction = value["correction"]
     if value["has_error"] is True and not isinstance(correction, dict):
-        raise ValueError("correction must be an object when has_error is true")
+        value["correction"] = None
+        value["requires_review"] = True
+        correction = None
     if correction is not None:
-        correction_required = (
-            "corrected_solution", "corrected_steps", "final_answer",
-            "verification_expression", "confidence",
-        )
-        correction_missing = [key for key in correction_required if key not in correction]
-        if correction_missing:
-            raise ValueError(
-                "correction missing fields: " + ", ".join(correction_missing)
+        correction_missing = [
+            key for key in (
+                "corrected_solution", "corrected_steps", "final_answer",
+                "verification_expression", "confidence",
             )
+            if key not in correction
+        ]
+        if correction_missing:
+            value["requires_review"] = True
+        correction.setdefault("corrected_steps", [])
+        correction.setdefault("final_answer", None)
+        correction.setdefault("verification_expression", None)
+        correction.setdefault("confidence", min(float(value["confidence"]), 0.5))
+        if "corrected_solution" not in correction:
+            correction["corrected_solution"] = "\n".join(
+                str(step.get("latex") or step.get("explanation") or "").strip()
+                for step in correction["corrected_steps"]
+                if isinstance(step, dict)
+            ).strip()
         if not isinstance(correction["corrected_steps"], list):
             raise ValueError("correction.corrected_steps must be an array")
         correction_confidence = float(correction["confidence"])

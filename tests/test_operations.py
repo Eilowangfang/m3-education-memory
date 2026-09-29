@@ -8,9 +8,22 @@ from pathlib import Path
 from m3_edu_memory.database import connect, initialize
 from m3_edu_memory.operations import is_fatal_provider_error, routing_batch_status
 from scripts.finalize_seed_main_memory import build_acceptance
+from scripts.run_seed_main_memory import pass_exit_is_fatal
 
 
 class OperationsTests(unittest.TestCase):
+    def test_batch_retries_item_failures_but_stops_on_abort_or_crash(self):
+        self.assertFalse(pass_exit_is_fatal(0, None))
+        self.assertFalse(pass_exit_is_fatal(
+            1,
+            {"failed_count": 3, "aborted": False, "fatal_error": None},
+        ))
+        self.assertTrue(pass_exit_is_fatal(
+            1,
+            {"failed_count": 3, "aborted": True, "fatal_error": "HTTP 403"},
+        ))
+        self.assertTrue(pass_exit_is_fatal(2, None))
+
     def test_full_demo_acceptance_requires_complete_artifacts(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

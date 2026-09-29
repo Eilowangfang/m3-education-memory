@@ -46,6 +46,18 @@ def read_progress(path: Path) -> dict | None:
     return payload if isinstance(payload, dict) else None
 
 
+def pass_exit_is_fatal(exit_code: int, result: dict | None) -> bool:
+    """Distinguish retryable per-item failures from a crashed or aborted pass."""
+    if exit_code == 0:
+        return False
+    result = result or {}
+    return not (
+        exit_code == 1
+        and not result.get("aborted")
+        and not result.get("fatal_error")
+    )
+
+
 def counts(db_path: str, policy_name: str, policy_version: str) -> dict:
     connection = sqlite3.connect(db_path)
     total = connection.execute("SELECT COUNT(*) FROM attempts").fetchone()[0]
@@ -136,6 +148,7 @@ def main() -> int:
                 write_status(status_path, status)
                 progress_path = root / f"routing-pass-{pass_number}.progress.json"
                 progress_path.unlink(missing_ok=True)
+                result_path = root / f"routing-pass-{pass_number}.json"
                 command = base + [
                     "diagnose-routed",
                     "--db", args.db,
@@ -145,7 +158,7 @@ def main() -> int:
                     "--limit", str(current["remaining"]),
                     "--max-workers", str(args.max_workers),
                     "--defer-derived-refresh",
-                    "--result-output", str(root / f"routing-pass-{pass_number}.json"),
+                    "--result-output", str(result_path),
                     "--progress-output", str(progress_path),
                 ]
                 log.write("\n$ " + subprocess.list2cmdline(command) + "\n")
@@ -167,7 +180,16 @@ def main() -> int:
                     write_status(status_path, status)
                     time.sleep(15)
                 status["last_pass_exit_code"] = process.returncode
-                if process.returncode != 0:
+                pass_result = read_progress(result_path)
+                if pass_result is not None:
+                    status["last_pass_result"] = {
+                        key: pass_result.get(key)
+                        for key in (
+                            "selected_count", "completed_count", "failed_count",
+                            "aborted", "fatal_error", "unattempted_count",
+                        )
+                    }
+                if pass_exit_is_fatal(process.returncode, pass_result):
                     status["status"] = "failed"
                     status["stage"] = "routing-pass-failed"
                     status["error"] = (
@@ -178,10 +200,28 @@ def main() -> int:
                     write_status(status_path, status)
                     raise RuntimeError(status["error"])
 
+                # Exit code 1 with only per-item failures is expected during a
+                # large network batch. The next pass selects only records that
+                # are still unmaterialized and retries them.
+                status["stage"] = f"routing-pass-{pass_number}-completed"
+                status["updated_at"] = now()
+                write_status(status_path, status)
+
             final_counts = counts(
                 args.db, policy.policy_name, policy.policy_version
             )
             status.update(final_counts)
+            if final_counts["remaining"]:
+                status["status"] = "partial"
+                status["stage"] = "retry-limit-reached"
+                status["error"] = (
+                    f"{final_counts['remaining']} attempts remain after "
+                    f"{args.max_passes} routing passes"
+                )
+                status["completed_at"] = now()
+                status["updated_at"] = status["completed_at"]
+                write_status(status_path, status)
+                return 1
             status["stage"] = "reverify-corrections"
             status["updated_at"] = now()
             write_status(status_path, status)

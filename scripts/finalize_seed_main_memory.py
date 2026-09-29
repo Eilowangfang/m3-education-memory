@@ -163,6 +163,15 @@ def wait_for_routing(args, final_status: Path) -> dict:
         }:
             return live
         if (
+            live["remaining_attempts"] > 0
+            and batch.get("status") in {"failed", "partial"}
+        ):
+            raise RuntimeError(
+                "Seed batch stopped with "
+                f"{live['remaining_attempts']} unmaterialized attempts; "
+                "restart the resumable batch before finalization"
+            )
+        if (
             batch.get("status") == "running"
             and not process_exists(batch.get("pid"))
         ):

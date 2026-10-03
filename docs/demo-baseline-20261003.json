@@ -1,0 +1,32 @@
+{
+  "purpose": "Development baseline for the next revision of the education memory demo",
+  "created_date": "2026-10-03",
+  "baseline_commit": "21b5e55",
+  "archive_tag": "demo-archive-20261003",
+  "development_branch": "demo/v2-20261003",
+  "workspace_directories": {
+    "baseline": "m3-education-memory",
+    "archive": "archives/demo-2026-10-03",
+    "development": "m3-education-memory-v2",
+    "shared_dataset": "dataset/FERMAT"
+  },
+  "snapshot_contents": [
+    "Source code zip and recoverable Git bundle",
+    "SQLite backups verified using PRAGMA quick_check",
+    "Generated images, evaluation outputs and reports",
+    "Per-file SHA-256 manifest"
+  ],
+  "development_runtime": {
+    "database_copies": "independent",
+    "local_asset_paths": "rebased to the development directory",
+    "local_dependencies": "copied; ignored by Git",
+    "api_keys": "environment variables only"
+  },
+  "state_at_archive": {
+    "total_attempts": 2244,
+    "materialized_attempts": 2243,
+    "remaining_attempts": 1,
+    "full_dataset_finalization": "not completed",
+    "new_revision_requirements": "awaiting user requirements"
+  }
+}

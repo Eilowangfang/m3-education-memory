@@ -16,6 +16,48 @@ DOMAIN_LABELS = {
     "pst": "概率统计", "trg": "三角学", "apt": "综合能力",
 }
 
+TYPE_ADVICE = {
+    "algebraic_manipulation": "逐步核对等式变形与符号",
+    "arithmetic": "用估算或回代核查关键计算",
+    "conceptual": "复述定义和适用条件后再解题",
+    "notation": "完成解答后检查符号、单位与记号",
+    "transcription": "对照题目和草稿检查誊写内容",
+    "omitted_step": "补全推导中跳过的关键步骤",
+    "assumption": "先写清已知条件和所用假设",
+    "presentation": "按步骤写出依据与最终结论",
+}
+
+
+def _frequency_summary(categories: list[dict], domains: list[dict], total: int) -> str:
+    """A concise narrative derived only from the displayed counts."""
+    if not total:
+        return "分析：当前范围没有模型判错题目。建议：扩大时间范围后再查看错误分布。"
+    leading = categories[:3]
+    leading_count = sum(item["count"] for item in leading)
+    type_text = "、".join(
+        f"{item['label'][:20]}{item['count']}道" for item in leading
+    )
+    domain_text = "、".join(
+        f"{item['name'][:20]}{item['count']}道" for item in domains[:3]
+    )
+    advice = [
+        TYPE_ADVICE.get(item["error_type"], "回看对应错题并标出首个出错步骤")
+        for item in categories[:2]
+    ]
+    while len(advice) < 2:
+        advice.append("每周按首错步骤复做并对照原图")
+    point = next(
+        (item["name"][:18] for item in leading[0]["top_knowledge_points"]),
+        "高频错题",
+    )
+    return (
+        f"分析：本期模型判错{total}道，{type_text}最常见，"
+        f"前{len(leading)}类合计{leading_count}道（{leading_count / total:.1%}）。"
+        f"按数学方向，{domain_text}数量居前；频次也受各方向作答量影响。"
+        f"建议：①先复盘“{point}”相关题；②{advice[0]}；"
+        f"③{advice[1]}，再对照首错步骤复做。"
+    )
+
 
 def analyze_errors(db_path: str | Path, *, request: str, model: str) -> dict:
     """Analyze the full requested cohort; every displayed count is traceable to cases."""
@@ -111,6 +153,27 @@ def analyze_errors(db_path: str | Path, *, request: str, model: str) -> dict:
         })
     categories.sort(key=lambda row: (-row["count"], row["error_type"]))
     cases.sort(key=lambda row: (row["time"], row["attempt_id"]), reverse=True)
+    diagnosed_by_domain = Counter(item["domain_code"] for item in attempts)
+    errors_by_domain: dict[str, list[dict]] = defaultdict(list)
+    for case in cases:
+        errors_by_domain[case["domain_code"]].append(case)
+    domains = []
+    for code, members in errors_by_domain.items():
+        type_counts = Counter(case["error_type"] for case in members)
+        domains.append({
+            "domain_code": code,
+            "name": DOMAIN_LABELS.get(code, code),
+            "count": len(members),
+            "attempt_count": diagnosed_by_domain[code],
+            "model_error_rate": round(len(members) / diagnosed_by_domain[code], 4),
+            "types": [
+                {"error_type": error_type,
+                 "label": ERROR_LABELS.get(error_type, error_type),
+                 "count": count}
+                for error_type, count in type_counts.most_common()
+            ],
+        })
+    domains.sort(key=lambda row: (-row["count"], row["domain_code"]))
     point_errors = Counter(
         point for case in cases for point in case["knowledge_points"]
     )
@@ -141,6 +204,8 @@ def analyze_errors(db_path: str | Path, *, request: str, model: str) -> dict:
             "bbox_available": sum(case["has_bbox"] for case in cases),
         },
         "categories": categories,
+        "domains": domains,
+        "frequency_summary": _frequency_summary(categories, domains, len(cases)),
         "monthly": [
             {"month": month, "total": sum(counts.values()),
              "types": dict(counts)}

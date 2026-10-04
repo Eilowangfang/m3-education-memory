@@ -53,6 +53,13 @@ class ErrorAnalysisTests(unittest.TestCase):
         self.assertEqual(report["coverage"]["missing_diagnosis"], 1)
         self.assertEqual(report["coverage"]["error_attempts"], 2)
         self.assertEqual(sum(item["count"] for item in report["categories"]), 2)
+        self.assertEqual(sum(item["count"] for item in report["domains"]), 2)
+        self.assertEqual(report["domains"][0]["attempt_count"], 3)
+        self.assertEqual(report["domains"][0]["model_error_rate"], 0.6667)
+        summary = report["frequency_summary"]
+        self.assertLessEqual(len(summary), 500)
+        self.assertLess(summary.index("分析："), summary.index("建议："))
+        self.assertIn("计算错误1道", summary)
         for category in report["categories"]:
             self.assertEqual(
                 sum(domain["count"] for domain in category["domains"]),

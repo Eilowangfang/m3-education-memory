@@ -23,6 +23,7 @@ from .review_ui import review_ui_html
 from .student_ui import student_ui_html
 from .student_analysis_ui import student_analysis_ui_html
 from .error_analysis import analyze_errors
+from .practice import generate_practice
 from .retrieval import hybrid_search, memory_index_stats
 from .embeddings import create_embedding_client
 from .ingestion import (
@@ -95,6 +96,19 @@ class MemoryApi:
                 self.db_path, request=request,
                 model=str((body or {}).get("model") or self.default_model),
             )
+        if method == "POST" and parsed.path == "/v1/memory/practice":
+            analysis_request = str((body or {}).get("analysis_request", "")).strip()
+            practice_request = str((body or {}).get("request", "")).strip()
+            if not analysis_request or not practice_request:
+                return HTTPStatus.BAD_REQUEST, {"error": "analysis_request and request are required"}
+            report = analyze_errors(
+                self.db_path, request=analysis_request,
+                model=str((body or {}).get("model") or self.default_model),
+            )
+            try:
+                return HTTPStatus.OK, generate_practice(report, request=practice_request)
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
         if (
             method == "GET" and len(segments) == 4
             and segments[:2] == ["v1", "evaluation-suites"]

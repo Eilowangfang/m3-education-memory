@@ -53,6 +53,11 @@ class ErrorAnalysisTests(unittest.TestCase):
         self.assertEqual(report["coverage"]["missing_diagnosis"], 1)
         self.assertEqual(report["coverage"]["error_attempts"], 2)
         self.assertEqual(sum(item["count"] for item in report["categories"]), 2)
+        for category in report["categories"]:
+            self.assertEqual(
+                sum(domain["count"] for domain in category["domains"]),
+                category["count"],
+            )
         self.assertEqual(report["weaknesses"][0]["attempt_count"], 3)
         self.assertEqual(report["weaknesses"][0]["error_rate"], 0.6667)
         self.assertEqual({item["attempt_id"] for item in report["cases"]}, {"one", "two"})

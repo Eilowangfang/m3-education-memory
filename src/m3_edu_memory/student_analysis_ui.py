@@ -23,8 +23,8 @@ main{max-width:1180px;margin:auto;padding:36px 22px 90px}.hero{background:radial
 </head><body>
 <header class="top"><div class="brand"><span class="mark">∫</span>数学记忆智能体</div><small>错题分析 · 多模态记忆</small></header>
 <main><section class="hero"><div class="eyebrow">错题诊断和回访</div><h1>从过去的解题中，找到下一步</h1><p>输入时间和数学方向，查看错因分类、高频模式、薄弱点与每道题的错误触发位置。</p>
-<form id="form" class="ask"><input id="query" aria-label="输入错题分析问题" value="帮我收集分析过去1个月的错题" autocomplete="off"><button id="submit" type="submit">生成分析</button></form>
-<div class="examples"><button data-q="帮我收集分析过去1个月的错题">过去1个月</button><button data-q="分析过去7个月的几何错题">几何 · 7个月</button><button data-q="分析过去7个月的概率统计错题">概率统计 · 7个月</button><button data-q="分析过去3个月的微积分错题">微积分 · 3个月</button></div></section>
+<form id="form" class="ask"><input id="query" aria-label="输入错题分析问题" value="帮我收集分析过去3个月的错题" autocomplete="off"><button id="submit" type="submit">生成分析</button></form>
+<div class="examples"><button data-q="帮我收集分析过去3个月的错题">过去3个月</button><button data-q="分析过去7个月的几何错题">几何 · 7个月</button><button data-q="分析过去7个月的概率统计错题">概率统计 · 7个月</button><button data-q="分析过去3个月的微积分错题">微积分 · 3个月</button></div></section>
 <div id="status" class="status hidden"></div><div id="content"></div></main>
 <script>
 const root='/student-v2', $=id=>document.getElementById(id), esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

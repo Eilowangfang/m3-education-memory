@@ -29,7 +29,7 @@ TYPE_ADVICE = {
 
 
 def _frequency_summary(categories: list[dict], domains: list[dict], total: int) -> str:
-    """A concise narrative derived only from the displayed counts."""
+    """A readable analysis and study plan derived only from displayed counts."""
     if not total:
         return "分析：当前范围没有模型判错题目。建议：扩大时间范围后再查看错误分布。"
     leading = categories[:3]
@@ -50,13 +50,49 @@ def _frequency_summary(categories: list[dict], domains: list[dict], total: int) 
         (item["name"][:18] for item in leading[0]["top_knowledge_points"]),
         "高频错题",
     )
-    return (
-        f"分析：本期模型判错{total}道，{type_text}最常见，"
-        f"前{len(leading)}类合计{leading_count}道（{leading_count / total:.1%}）。"
-        f"按数学方向，{domain_text}数量居前；频次也受各方向作答量影响。"
-        f"建议：①先复盘“{point}”相关题；②{advice[0]}；"
-        f"③{advice[1]}，再对照首错步骤复做。"
+    top_domain = domains[0] if domains else None
+    domain_detail = (
+        f"其中{top_domain['name'][:20]}的{top_domain['attempt_count']}道已诊断作答中，"
+        f"模型判错{top_domain['count']}道（{top_domain['model_error_rate']:.1%}）；"
+        f"该方向以{top_domain['types'][0]['label'][:20]}为最多，"
+        f"有{top_domain['types'][0]['count']}道。"
+        if top_domain and top_domain["types"] else ""
     )
+    point_detail = (
+        f"在{leading[0]['label'][:20]}中，“{point}”标签关联"
+        f"{leading[0]['top_knowledge_points'][0]['error_count']}道错题，"
+        "可作为优先回访的知识点线索。"
+        if leading[0]["top_knowledge_points"] else ""
+    )
+    introduction = (
+        f"分析：本期模型判错{total}道，{type_text}最常见，"
+        f"前{len(leading)}类合计{leading_count}道，占本期错题的{leading_count / total:.1%}。"
+        f"这表明复盘时可以先处理出现次数最多的错误类型，再检查较少见的错误。"
+        f"按数学方向，{domain_text}数量居前。"
+    )
+    qualification = "各方向作答量不同，不能只凭错题数量判断哪个方向掌握得更差。"
+    recommendations = (
+        f"建议：①先按高频错误类型挑选代表题，查看手写原图、模型指出的首错步骤与订正，"
+        f"确认错误究竟发生在概念选择、列式还是推导过程；"
+        f"②围绕“{point}”做一组同知识点的相近题，逐题写下关键依据；"
+        f"③针对前两类高频错误，分别练习{advice[0]}、{advice[1]}；"
+        f"④隔几天重新独立完成这些题，对照原解答检查同一错误是否再次出现，"
+        f"再决定是否扩大到其他数学方向。"
+    )
+    details = [domain_detail, qualification, point_detail]
+    summary = introduction + "".join(details) + recommendations
+    while len(summary) > 500 and details:
+        details.pop()
+        summary = introduction + "".join(details) + recommendations
+    if len(summary) > 500:
+        return (
+            f"分析：本期模型判错{total}道；{type_text}最常见，"
+            f"合计{leading_count}道（{leading_count / total:.1%}）。"
+            f"按数学方向，{domain_text}数量居前；各方向作答量不同。"
+            f"建议：①回访“{point}”相关题；②{advice[0]}；"
+            f"③{advice[1]}，再对照首错步骤复做。"
+        )
+    return summary
 
 
 def analyze_errors(db_path: str | Path, *, request: str, model: str) -> dict:

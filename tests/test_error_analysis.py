@@ -60,6 +60,9 @@ class ErrorAnalysisTests(unittest.TestCase):
         self.assertLessEqual(len(summary), 500)
         self.assertLess(summary.index("分析："), summary.index("建议："))
         self.assertIn("计算错误1道", summary)
+        self.assertIn("各方向作答量不同", summary)
+        self.assertIn("④隔几天重新独立完成", summary)
+        self.assertTrue(summary.endswith("。"))
         for category in report["categories"]:
             self.assertEqual(
                 sum(domain["count"] for domain in category["domains"]),

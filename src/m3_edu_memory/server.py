@@ -21,6 +21,8 @@ from .diagnosis import analysis_run_metrics
 from .review import submit_diagnosis_review
 from .review_ui import review_ui_html
 from .student_ui import student_ui_html
+from .student_analysis_ui import student_analysis_ui_html
+from .error_analysis import analyze_errors
 from .retrieval import hybrid_search, memory_index_stats
 from .embeddings import create_embedding_client
 from .ingestion import (
@@ -84,6 +86,14 @@ class MemoryApi:
         if method == "GET" and parsed.path == "/v1/analysis/metrics":
             return HTTPStatus.OK, analysis_run_metrics(
                 self.db_path, model=model if "model" in params else None
+            )
+        if method == "POST" and parsed.path == "/v1/memory/error-analysis":
+            request = str((body or {}).get("request", "")).strip()
+            if not request:
+                return HTTPStatus.BAD_REQUEST, {"error": "request is required"}
+            return HTTPStatus.OK, analyze_errors(
+                self.db_path, request=request,
+                model=str((body or {}).get("model") or self.default_model),
             )
         if (
             method == "GET" and len(segments) == 4
@@ -326,6 +336,13 @@ def _handler(api: MemoryApi):
                 self._send_content(
                     HTTPStatus.OK,
                     student_ui_html().encode("utf-8"),
+                    "text/html; charset=utf-8",
+                )
+                return
+            if parsed.path == "/student-v2" or parsed.path.startswith("/student-v2/"):
+                self._send_content(
+                    HTTPStatus.OK,
+                    student_analysis_ui_html().encode("utf-8"),
                     "text/html; charset=utf-8",
                 )
                 return
